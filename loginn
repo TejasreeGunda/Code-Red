@@ -1,0 +1,144 @@
+from datetime import datetime
+from werkzeug.security import generate_password_hash, check_password_hash
+from flask_login import UserMixin
+from app import db
+
+class Student(db.Model, UserMixin):
+    id = db.Column(db.Integer, primary_key=True)
+    name = db.Column(db.String(100), nullable=False)
+    email = db.Column(db.String(120), unique=True, nullable=False)
+    password_hash = db.Column(db.String(256), nullable=False)
+    prior_knowledge = db.Column(db.Text, nullable=True)
+    goal = db.Column(db.Text, nullable=True)
+    created_at = db.Column(db.DateTime, default=datetime.utcnow)
+    is_admin = db.Column(db.Boolean, default=False)
+    
+    progress = db.relationship('Progress', backref='student', lazy=True)
+    exam_responses = db.relationship('ExamResponse', backref='student', lazy=True)
+    certificates = db.relationship('Certificate', backref='student', lazy=True)
+    
+    def set_password(self, password):
+        self.password_hash = generate_password_hash(password)
+    
+    def check_password(self, password):
+        return check_password_hash(self.password_hash, password)
+
+class Admin(db.Model, UserMixin):
+    id = db.Column(db.Integer, primary_key=True)
+    name = db.Column(db.String(100), nullable=False)
+    email = db.Column(db.String(120), unique=True, nullable=False)
+    password_hash = db.Column(db.String(256), nullable=False)
+    created_at = db.Column(db.DateTime, default=datetime.utcnow)
+    is_admin = db.Column(db.Boolean, default=True)
+    
+    def set_password(self, password):
+        self.password_hash = generate_password_hash(password)
+    
+    def check_password(self, password):
+        return check_password_hash(self.password_hash, password)
+
+class Content(db.Model):
+    id = db.Column(db.Integer, primary_key=True)
+    title = db.Column(db.String(200), nullable=False)
+    topic = db.Column(db.String(100), nullable=False)
+    level = db.Column(db.String(50), nullable=False)
+    description = db.Column(db.Text, nullable=True)
+    file_path = db.Column(db.String(255), nullable=False)
+    created_at = db.Column(db.DateTime, default=datetime.utcnow)
+    
+    progress_records = db.relationship('Progress', backref='content', lazy=True)
+    exams = db.relationship('Exam', backref='related_content', lazy=True)
+
+class Progress(db.Model):
+    id = db.Column(db.Integer, primary_key=True)
+    student_id = db.Column(db.Integer, db.ForeignKey('student.id'), nullable=False)
+    content_id = db.Column(db.Integer, db.ForeignKey('content.id'), nullable=False)
+    completion_percentage = db.Column(db.Float, default=0.0)
+    completed = db.Column(db.Boolean, default=False)
+    last_updated = db.Column(db.DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+
+class Exam(db.Model):
+    id = db.Column(db.Integer, primary_key=True)
+    title = db.Column(db.String(200), nullable=False)
+    description = db.Column(db.Text, nullable=True)
+    content_id = db.Column(db.Integer, db.ForeignKey('content.id'), nullable=True)
+    time_limit_minutes = db.Column(db.Integer, default=60)
+    passing_score = db.Column(db.Float, default=70.0)  # Percentage required to pass
+    is_active = db.Column(db.Boolean, default=True)
+    created_at = db.Column(db.DateTime, default=datetime.utcnow)
+    start_date = db.Column(db.DateTime, nullable=True)
+    end_date = db.Column(db.DateTime, nullable=True)
+    
+    questions = db.relationship('Question', backref='exam', lazy=True, cascade="all, delete-orphan")
+    responses = db.relationship('ExamResponse', backref='exam', lazy=True)
+    
+    def get_total_points(self):
+        return sum(q.points for q in self.questions)
+
+class Question(db.Model):
+    id = db.Column(db.Integer, primary_key=True)
+    exam_id = db.Column(db.Integer, db.ForeignKey('exam.id'), nullable=False)
+    question_text = db.Column(db.Text, nullable=False)
+    question_type = db.Column(db.String(20), nullable=False)  # "multiple_choice" or "open_ended"
+    options = db.Column(db.Text, nullable=True)  # JSON string of options for multiple choice
+    correct_answer = db.Column(db.Text, nullable=True)  # For multiple choice
+    points = db.Column(db.Integer, default=1)
+    order = db.Column(db.Integer, default=0)
+    
+    responses = db.relationship('QuestionResponse', backref='question', lazy=True)
+
+class ExamResponse(db.Model):
+    id = db.Column(db.Integer, primary_key=True)
+    student_id = db.Column(db.Integer, db.ForeignKey('student.id'), nullable=False)
+    exam_id = db.Column(db.Integer, db.ForeignKey('exam.id'), nullable=False)
+    start_time = db.Column(db.DateTime, default=datetime.utcnow)
+    end_time = db.Column(db.DateTime, nullable=True)
+    score = db.Column(db.Float, nullable=True)
+    is_completed = db.Column(db.Boolean, default=False)
+    is_graded = db.Column(db.Boolean, default=False)
+    
+    question_responses = db.relationship('QuestionResponse', backref='exam_response', lazy=True)
+    certificate = db.relationship('Certificate', backref='exam_response', uselist=False, lazy=True)
+    
+    def calculate_score(self):
+        """Calculate score based on graded question responses"""
+        total_points = self.exam.get_total_points()
+        if total_points == 0:
+            return 0.0
+            
+        earned_points = sum(qr.earned_points for qr in self.question_responses if qr.is_graded)
+        return (earned_points / total_points) * 100
+    
+    def has_passed(self):
+        """Check if student has passed the exam based on passing_score"""
+        if self.score is None:
+            return False
+        return self.score >= self.exam.passing_score
+
+class QuestionResponse(db.Model):
+    id = db.Column(db.Integer, primary_key=True)
+    exam_response_id = db.Column(db.Integer, db.ForeignKey('exam_response.id'), nullable=False)
+    question_id = db.Column(db.Integer, db.ForeignKey('question.id'), nullable=False)
+    answer = db.Column(db.Text, nullable=True)
+    earned_points = db.Column(db.Float, default=0.0)
+    is_graded = db.Column(db.Boolean, default=False)
+    feedback = db.Column(db.Text, nullable=True)
+    
+    def auto_grade(self):
+        """Automatically grade multiple choice questions"""
+        if self.question.question_type == 'multiple_choice':
+            self.is_graded = True
+            if self.answer == self.question.correct_answer:
+                self.earned_points = self.question.points
+            else:
+                self.earned_points = 0.0
+            return True
+        return False
+
+class Certificate(db.Model):
+    id = db.Column(db.Integer, primary_key=True)
+    student_id = db.Column(db.Integer, db.ForeignKey('student.id'), nullable=False)
+    exam_response_id = db.Column(db.Integer, db.ForeignKey('exam_response.id'), nullable=False)
+    issue_date = db.Column(db.DateTime, default=datetime.utcnow)
+    certificate_number = db.Column(db.String(50), unique=True, nullable=False)
+    file_path = db.Column(db.String(255), nullable=True)
