@@ -1,0 +1,74 @@
+import numpy as np
+from sklearn.neighbors import NearestNeighbors
+from models import Student, Content
+
+def recommend_learning_path(student_id, num_recommendations=3):
+    """
+    Recommends content for a student based on their preferences and learning goals.
+    
+    Args:
+        student_id: ID of the student
+        num_recommendations: Number of recommendations to generate
+        
+    Returns:
+        List of recommended Content objects
+    """
+    try:
+        student = Student.query.get(student_id)
+        if not student:
+            return []
+            
+        contents = Content.query.all()
+        if not contents or len(contents) < num_recommendations:
+            return contents
+        
+        # Get student preferences
+        prior_knowledge = student.prior_knowledge or ""
+        goal = student.goal or ""
+        
+        # Create vectors for machine learning
+        all_topics = sorted(list(set(c.topic for c in contents)))
+        student_vec = np.zeros(len(all_topics) + 1)
+        
+        # Set vector values based on student profile
+        for i, topic in enumerate(all_topics):
+            if topic.lower() in prior_knowledge.lower():
+                student_vec[i] = 0.5
+            if topic.lower() in goal.lower():
+                student_vec[i] = 1.0
+        
+        # Create content vectors
+        content_vecs = []
+        available_content = []
+        
+        for content in contents:
+            vec = np.zeros(len(all_topics) + 1)
+            topic_index = all_topics.index(content.topic)
+            vec[topic_index] = 1.0
+            
+            if content.level == "Beginner":
+                vec[-1] = 1
+            elif content.level == "Intermediate":
+                vec[-1] = 2
+            else:
+                vec[-1] = 3
+                
+            content_vecs.append(vec)
+            available_content.append(content)
+        
+        # Use k-nearest neighbors to find recommendations
+        if len(content_vecs) > 0:
+            knn = NearestNeighbors(n_neighbors=min(num_recommendations, len(content_vecs)))
+            knn.fit(content_vecs)
+            
+            distances, indices = knn.kneighbors(student_vec.reshape(1, -1))
+            
+            # Return recommended content
+            recommended = [available_content[i] for i in indices[0]]
+            return recommended
+        else:
+            return []
+            
+    except Exception as e:
+        print(f"Recommendation error: {str(e)}")
+        return []
