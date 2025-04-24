@@ -1,0 +1,37 @@
+import json
+import random
+import string
+from datetime import datetime, timedelta
+
+def generate_certificate_number():
+    """
+    Generate a unique certificate number
+    """
+    timestamp = datetime.utcnow().strftime('%Y%m%d%H%M%S')
+    random_str = ''.join(random.choices(string.ascii_uppercase + string.digits, k=8))
+    return f"CR-CERT-{timestamp}-{random_str}"
+
+def get_question_options(question):
+    """
+    Parse question options from JSON string
+    """
+    if question.options and question.question_type == 'multiple_choice':
+        try:
+            return json.loads(question.options)
+        except:
+            pass
+    return []
+
+def calculate_time_remaining(exam_response):
+    """
+    Calculate time remaining for an exam in seconds
+    """
+    if exam_response.is_completed:
+        return 0
+        
+    exam = exam_response.exam
+    time_limit_seconds = exam.time_limit_minutes * 60
+    elapsed_seconds = (datetime.utcnow() - exam_response.start_time).total_seconds()
+    
+    remaining_seconds = max(0, time_limit_seconds - elapsed_seconds)
+    return int(remaining_seconds)
