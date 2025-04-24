@@ -1,0 +1,183 @@
+import os
+import logging
+from datetime import datetime
+from weasyprint import HTML
+
+def generate_certificate(certificate, exam_response):
+    """
+    Generate a PDF certificate for a passed exam
+    
+    Args:
+        certificate: Certificate model instance
+        exam_response: ExamResponse model instance
+        
+    Returns:
+        Path to the generated certificate file
+    """
+    try:
+        context = {
+            'student_name': certificate.student.name,
+            'exam_title': exam_response.exam.title,
+            'exam_score': f"{exam_response.score:.1f}%",
+            'issue_date': certificate.issue_date.strftime('%B %d, %Y'),
+            'certificate_number': certificate.certificate_number
+        }
+        
+        # Render certificate HTML
+        html_content = render_certificate_html(context)
+        
+        # Ensure directory exists
+        certificate_dir = 'static/certificates'
+        os.makedirs(certificate_dir, exist_ok=True)
+        
+        # Generate unique filename
+        filename = f"certificate_{certificate.certificate_number}.pdf"
+        filepath = os.path.join(certificate_dir, filename)
+        
+        # Generate PDF
+        HTML(string=html_content).write_pdf(filepath)
+        
+        # Update certificate with file path
+        certificate.file_path = filepath
+        return filepath
+    
+    except Exception as e:
+        logging.error(f"Certificate generation error: {str(e)}")
+        return None
+
+def render_certificate_html(context):
+    """
+    Render certificate HTML template
+    """
+    html = f"""
+    <!DOCTYPE html>
+    <html>
+    <head>
+        <meta charset="UTF-8">
+        <title>Certificate of Completion</title>
+        <style>
+            @page {{
+                size: letter landscape;
+                margin: 0;
+            }}
+            body {{
+                font-family: Arial, sans-serif;
+                margin: 0;
+                padding: 0;
+                background-color: white;
+                color: #333;
+            }}
+            .certificate-container {{
+                width: 100%;
+                height: 100%;
+                padding: 50px;
+                box-sizing: border-box;
+                position: relative;
+                display: flex;
+                flex-direction: column;
+                justify-content: center;
+                align-items: center;
+                text-align: center;
+            }}
+            .border {{
+                position: absolute;
+                top: 20px;
+                left: 20px;
+                right: 20px;
+                bottom: 20px;
+                border: 5px solid #dc3545;
+                z-index: 0;
+            }}
+            .content {{
+                z-index: 1;
+                max-width: 800px;
+            }}
+            .header {{
+                margin-bottom: 30px;
+            }}
+            .title {{
+                color: #dc3545;
+                font-size: 48px;
+                margin: 0;
+                font-weight: bold;
+            }}
+            .subtitle {{
+                font-size: 24px;
+                margin: 10px 0 0;
+                font-weight: normal;
+            }}
+            .body {{
+                margin: 40px 0;
+            }}
+            .student-name {{
+                color: #dc3545;
+                font-size: 36px;
+                margin: 15px 0;
+                font-weight: bold;
+            }}
+            .exam-title {{
+                font-size: 24px;
+                margin: 15px 0;
+                font-weight: bold;
+            }}
+            .score {{
+                font-size: 20px;
+                margin: 5px 0;
+            }}
+            .footer {{
+                margin-top: 50px;
+                display: flex;
+                justify-content: space-between;
+                width: 100%;
+            }}
+            .signature {{
+                border-top: 2px solid black;
+                padding-top: 10px;
+                width: 200px;
+                margin: 0 auto;
+            }}
+            .details {{
+                margin-top: 20px;
+            }}
+            .detail-row {{
+                margin: 5px 0;
+                font-size: 14px;
+            }}
+        </style>
+    </head>
+    <body>
+        <div class="certificate-container">
+            <div class="border"></div>
+            <div class="content">
+                <div class="header">
+                    <h1 class="title">CODE RED</h1>
+                    <h3 class="subtitle">Certificate of Completion</h3>
+                </div>
+                
+                <div class="body">
+                    <p>This certifies that</p>
+                    <h2 class="student-name">{context['student_name']}</h2>
+                    <p>has successfully completed</p>
+                    <h3 class="exam-title">{context['exam_title']}</h3>
+                    <p class="score">with a score of <b>{context['exam_score']}</b></p>
+                </div>
+                
+                <div class="footer">
+                    <div style="width: 50%; text-align: right;">
+                        <div class="signature">
+                            <p>Authorized Signature</p>
+                        </div>
+                    </div>
+                    <div style="width: 50%; text-align: left; padding-left: 50px;">
+                        <div class="details">
+                            <p class="detail-row">Issue Date: {context['issue_date']}</p>
+                            <p class="detail-row">Certificate ID: {context['certificate_number']}</p>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </body>
+    </html>
+    """
+    return html
